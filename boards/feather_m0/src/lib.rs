@@ -66,6 +66,16 @@ define_pins!(
     /// the red LED.  PWM capable.
     pin d13 = a17,
 
+    // FeatherM0 WiFi pins, attatched to the ATWINC1500
+    // ENA of ATWINC1500
+    pin d2 = a14,
+    // RST of ATWINC1500
+    pin d4 = a8,
+    // IRQ of ATWINC1500
+    pin d7 = a21,
+    // CS of ATWINC1500
+    pin d8 = a11,
+
     /// The I2C data line
     pin sda = a22,
     /// The I2C clock line
