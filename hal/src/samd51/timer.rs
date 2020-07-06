@@ -4,13 +4,13 @@ use crate::target_device::tc0::COUNT16;
 #[allow(unused)]
 use crate::target_device::{MCLK, TC2, TC3};
 
+use crate::timer_traits::InterruptDrivenTimer;
 // Only the G variants are missing these timers
 #[cfg(all(not(feature = "samd51g19a"), not(feature = "samd51g18a")))]
 use crate::target_device::{TC4, TC5};
 
 use crate::clock;
-use crate::time::Hertz;
-use nb;
+use crate::time::{Hertz, Microseconds};
 use void::Void;
 
 use cortex_m::asm::delay as cycle_delay;
@@ -46,13 +46,13 @@ impl<TC> CountDown for TimerCounter<TC>
 where
     TC: Count16,
 {
-    type Time = Hertz;
+    type Time = Microseconds;
 
     fn start<T>(&mut self, timeout: T)
     where
-        T: Into<Hertz>,
+        T: Into<Self::Time>,
     {
-        let params = TimerParams::new(timeout, self.freq.0);
+        let params = TimerParams::new_us(timeout, self.freq.0);
         let divider = params.divider;
         let cycles = params.cycles;
         let count = self.tc.count_16();
@@ -111,7 +111,7 @@ where
     }
 }
 
-impl<TC> TimerCounter<TC>
+impl<TC> InterruptDrivenTimer for TimerCounter<TC>
 where
     TC: Count16,
 {
@@ -119,7 +119,7 @@ where
     /// This method only sets the clock configuration to trigger
     /// the interrupt; it does not configure the interrupt controller
     /// or define an interrupt handler.
-    pub fn enable_interrupt(&mut self) {
+    fn enable_interrupt(&mut self) {
         self.tc.count_16().intenset.write(|w| w.ovf().set_bit());
     }
 
@@ -127,7 +127,7 @@ where
     /// This method only sets the clock configuration to prevent
     /// triggering the interrupt; it does not configure the interrupt
     /// controller.
-    pub fn disable_interrupt(&mut self) {
+    fn disable_interrupt(&mut self) {
         self.tc.count_16().intenclr.write(|w| w.ovf().set_bit());
     }
 }
@@ -179,12 +179,26 @@ pub struct TimerParams {
 }
 
 impl TimerParams {
-    pub fn new<T>(timeout: T, src_freq: u32) -> Self
+        pub fn new<T>(timeout: T, src_freq: u32) -> Self
     where
         T: Into<Hertz>,
     {
         let timeout = timeout.into();
         let ticks: u32 = src_freq / timeout.0.max(1);
+        Self::new_from_ticks(ticks)
+    }
+
+    pub fn new_us<T>(timeout: T, src_freq: u32) -> Self
+    where
+        T: Into<Microseconds>,
+    {
+        let timeout = timeout.into();
+        let ticks: u32 = (timeout.0 as u64 * src_freq as u64 / 1_000_000_u64) as u32;
+        Self::new_from_ticks(ticks)
+    }
+
+    fn new_from_ticks(ticks: u32) -> Self
+    {
         let divider = ((ticks >> 16) + 1).next_power_of_two();
         let divider = match divider {
             1 | 2 | 4 | 8 | 16 | 64 | 256 | 1024 => divider,
@@ -202,8 +216,8 @@ impl TimerParams {
 
         if cycles > u16::max_value() as u32 {
             panic!(
-                "cycles {} is out of range for a 16 bit counter (timeout={})",
-                cycles, timeout.0
+                "cycles {} is out of range for a 16 bit counter",
+                cycles
             );
         }
 
